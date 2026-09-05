@@ -110,7 +110,10 @@ class ElevenLabsTTSService {
     }
   }
   
+  private currentProcessId = 0;
+
   public stop() {
+    this.currentProcessId++;
     this.queue = [];
     if (this.currentAudio) {
       this.currentAudio.pause();
@@ -122,23 +125,11 @@ class ElevenLabsTTSService {
     this.currentMsgId = null;
     this.notifyStateChange();
   }
-  
-  public replay(text: string, msgId?: string) {
-    this.speak(text, msgId);
-  }
-
-  public isPlaying(msgId?: string): boolean {
-    if (msgId) {
-       return this.currentMsgId === msgId && (this.isPlayingAudio || this.queue.length > 0);
-    }
-    return this.isPlayingAudio || this.queue.length > 0;
-  }
 
   private async processQueue() {
     if (this.isPlayingAudio || this.queue.length === 0 || this.paused) {
       return;
     }
-
     this.isPlayingAudio = true;
     this.notifyStateChange();
     const item = this.queue.shift();
@@ -148,14 +139,21 @@ class ElevenLabsTTSService {
       this.notifyStateChange();
       return;
     }
+    
+    const processId = this.currentProcessId;
 
     try {
       const audioUrl = await this.fetchTTSAudio(item.text);
+      
+      // If stop() or speak() was called while we were fetching
+      if (processId !== this.currentProcessId) {
+        return;
+      }
+
       if (!audioUrl) {
-        // failed, just move to next chunk
         this.isPlayingAudio = false;
-      this.notifyStateChange();
-      this.processQueue();
+        this.notifyStateChange();
+        this.processQueue();
         return;
       }
       
@@ -163,26 +161,28 @@ class ElevenLabsTTSService {
       this.currentAudio = audio;
       
       audio.onended = () => {
-        URL.revokeObjectURL(audioUrl);
+        if (processId !== this.currentProcessId) return;
         this.currentAudio = null;
         this.isPlayingAudio = false;
-      this.notifyStateChange();
-      this.processQueue();
+        this.notifyStateChange();
+        this.processQueue();
       };
       
-      audio.onerror = () => {
-        console.error('Audio playback error');
-        URL.revokeObjectURL(audioUrl);
+      audio.onerror = (e) => {
+        if (processId !== this.currentProcessId) return;
+        const errStr = audio.error ? `[${audio.error.code}] ${audio.error.message}` : 'Unknown';
+        console.error('Audio playback error details:', errStr, e);
         this.currentAudio = null;
         this.isPlayingAudio = false;
-      this.notifyStateChange();
-      this.processQueue();
+        this.notifyStateChange();
+        this.processQueue();
       };
-
+      
       await audio.play();
       
     } catch (err) {
-      console.error('Error processing TTS queue:', err);
+      if (processId !== this.currentProcessId) return;
+      console.error('Error processing TTS queue (autoplay blocked?):', err);
       this.isPlayingAudio = false;
       this.notifyStateChange();
       this.processQueue();
@@ -209,7 +209,12 @@ class ElevenLabsTTSService {
       }
       
       const blob = await res.blob();
-      return URL.createObjectURL(blob);
+      // Use Data URI to avoid blob: URL issues on Safari/iOS
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(blob);
+      });
     } catch (err) {
       console.error('Failed to fetch TTS:', err);
       return null;

@@ -7,8 +7,8 @@ import {
   onAuthStateChanged,
   auth,
   User,
-  signInWithEmail as supabaseSignInWithEmail,
-  signUpWithEmail as supabaseSignUpWithEmail,
+  signInWithEmail,
+  signUpWithEmail,
 } from '../services/firebase';
 import {
   UniversityProfile,
@@ -249,7 +249,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const signInWithEmail = async (email: string, password: string) => {
     setAuthLoading(true);
     try {
-      await supabaseSignInWithEmail(email, password);
+      await signInWithEmail(email, password);
     } finally {
       setAuthLoading(false);
     }
@@ -258,7 +258,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const signUpWithEmail = async (email: string, password: string, name?: string) => {
     setAuthLoading(true);
     try {
-      await supabaseSignUpWithEmail(email, password, name);
+      await signUpWithEmail(email, password, name);
     } finally {
       setAuthLoading(false);
     }
