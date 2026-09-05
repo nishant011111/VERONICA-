@@ -7,6 +7,7 @@ import { retrievalService } from '../../services/kb/RetrievalService';
 import { ConversationService } from '../../services/ai/conversationService';
 import { ContextEngine } from '../../services/ai/ContextEngine';
 import { cleanMathLatexToPlain, cleanTextForSpeech, splitTextIntoSentenceChunks } from '../../services/ai/mathCleaner';
+import { ttsService } from '../../services/tts/elevenLabsTTSService';
 import { SaveAiNoteModal } from '../ai/SaveAiNoteModal';
 import { PracticeQuestionsModal } from '../ai/PracticeQuestionsModal';
 import { Card } from '../ui/Card';
@@ -43,7 +44,7 @@ import {
   WifiOff,
   Sliders,
   Code,
-  CheckCircle22,
+  CheckCircle2,
   Volume2,
   VolumeX
 } from 'lucide-react';
@@ -101,122 +102,52 @@ export const AskVeronicaScreen: React.FC = () => {
   const [autoSpeech, setAutoSpeech] = useState<boolean>(() => {
     return localStorage.getItem('veronica_auto_tts') === 'true';
   });
+  
+  // We use state to trigger re-renders when TTS state changes
   const [speakingMsgId, setSpeakingMsgId] = useState<string | null>(null);
-  const speechQueueRef = useRef<{ chunks: string[]; index: number; msgId?: string }>({ chunks: [], index: 0 });
-  const keepAliveIntervalRef = useRef<any>(null);
+
+  // Sync TTS state to UI
+  useEffect(() => {
+    ttsService.setOnStateChange((isPlaying, msgId) => {
+      if (isPlaying && msgId) {
+        setSpeakingMsgId(msgId);
+      } else {
+        setSpeakingMsgId(null);
+      }
+    });
+    return () => {
+      ttsService.setOnStateChange(() => {});
+    };
+  }, []);
 
   const stopSpeaking = () => {
-    if (keepAliveIntervalRef.current) {
-      clearInterval(keepAliveIntervalRef.current);
-      keepAliveIntervalRef.current = null;
-    }
-    speechQueueRef.current = { chunks: [], index: 0 };
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-    }
+    ttsService.stop();
     setSpeakingMsgId(null);
   };
 
   const toggleAutoSpeech = () => {
-    setAutoSpeech((prev) => {
-      const next = !prev;
-      localStorage.setItem('veronica_auto_tts', String(next));
-      if (!next) {
-        stopSpeaking();
-      }
-      showToast(`Auto Text-to-Speech ${next ? 'enabled' : 'disabled'}`, 'info');
-      return next;
-    });
-  };
-
-  const speakNextChunk = () => {
-    if (!('speechSynthesis' in window)) return;
-
-    const { chunks, index, msgId } = speechQueueRef.current;
-    if (index >= chunks.length) {
+    const next = !autoSpeech;
+    setAutoSpeech(next);
+    localStorage.setItem('veronica_auto_tts', String(next));
+    if (!next) {
       stopSpeaking();
-      return;
     }
-
-    const chunkText = chunks[index];
-    if (!chunkText || !chunkText.trim()) {
-      speechQueueRef.current.index += 1;
-      speakNextChunk();
-      return;
-    }
-
-    const utterance = new SpeechSynthesisUtterance(chunkText);
-    utterance.rate = 1.0;
-    utterance.pitch = 1.0;
-
-    // Select natural English voice if available
-    const voices = window.speechSynthesis.getVoices();
-    if (voices.length > 0) {
-      const preferred = voices.find(
-        (v) =>
-          v.lang.startsWith('en') &&
-          (v.name.includes('Google') ||
-            v.name.includes('Natural') ||
-            v.name.includes('Samantha') ||
-            v.name.includes('Daniel') ||
-            v.default)
-      ) || voices.find((v) => v.lang.startsWith('en'));
-      if (preferred) utterance.voice = preferred;
-    }
-
-    utterance.onend = () => {
-      speechQueueRef.current.index += 1;
-      speakNextChunk();
-    };
-
-    utterance.onerror = () => {
-      speechQueueRef.current.index += 1;
-      speakNextChunk();
-    };
-
-    if (msgId) setSpeakingMsgId(msgId);
-    window.speechSynthesis.speak(utterance);
+    showToast(`Auto Text-to-Speech ${next ? 'enabled' : 'disabled'}`, 'info');
   };
 
   const speakText = (text: string, msgId?: string) => {
-    if (!('speechSynthesis' in window)) {
-      showToast('Text-to-speech is not supported in your browser.', 'warning');
-      return;
-    }
-
     // Toggle off if currently speaking the exact same message
-    if (msgId && speakingMsgId === msgId) {
+    if (msgId && speakingMsgId === msgId && ttsService.isPlaying(msgId)) {
       stopSpeaking();
       return;
     }
-
-    stopSpeaking();
-
-    const cleanedText = cleanTextForSpeech(text);
-    if (!cleanedText.trim()) return;
-
-    const chunks = splitTextIntoSentenceChunks(cleanedText, 160);
-    speechQueueRef.current = { chunks, index: 0, msgId };
-
-    // Chrome keep-alive: pause and resume every 10s to prevent Chrome audio timeout freeze
-    keepAliveIntervalRef.current = setInterval(() => {
-      if ('speechSynthesis' in window && window.speechSynthesis.speaking) {
-        window.speechSynthesis.pause();
-        window.speechSynthesis.resume();
-      }
-    }, 10000);
-
-    speakNextChunk();
+    
+    setSpeakingMsgId(msgId || null);
+    ttsService.speak(text, msgId);
   };
 
-  // Pre-load voices and stop TTS on unmount
+  // Stop TTS on unmount
   useEffect(() => {
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.getVoices();
-      window.speechSynthesis.onvoiceschanged = () => {
-        window.speechSynthesis.getVoices();
-      };
-    }
     return () => {
       stopSpeaking();
     };

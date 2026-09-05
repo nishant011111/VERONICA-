@@ -181,10 +181,10 @@ export const VaultScreen: React.FC = () => {
   
   const oldDelete = (f: any) => {
     const confirmed = window.confirm(
-      `Are you sure you want to delete "${file.name}" from ${(file.storageSource || 'local').toUpperCase()} storage?`
+      `Are you sure you want to delete "${f.name}" from ${(f.storageSource || 'local').toUpperCase()} storage?`
     );
     if (confirmed) {
-      deleteVaultFile(file.id);
+      deleteVaultFile(f.id);
     }
   };
 

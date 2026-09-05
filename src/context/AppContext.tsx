@@ -1,12 +1,14 @@
 import { useKnowledgeBase } from '../hooks/useKnowledgeBase';
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import {
-  auth,
   loginWithGoogle,
   logoutUser,
   deleteUserCloudAccount,
   onAuthStateChanged,
+  auth,
   User,
+  signInWithEmail as supabaseSignInWithEmail,
+  signUpWithEmail as supabaseSignUpWithEmail,
 } from '../services/firebase';
 import {
   UniversityProfile,
@@ -51,6 +53,8 @@ interface AppContextType {
   authUser: User | null;
   authLoading: boolean;
   signInWithGoogle: () => Promise<void>;
+  signInWithEmail: (email: string, password: string) => Promise<void>;
+  signUpWithEmail: (email: string, password: string, name?: string) => Promise<void>;
   signInWithFingerprintUser: (userObj: { uid: string; displayName: string; email: string; photoURL?: string }) => void;
   isLogoutModalOpen: boolean;
   setIsLogoutModalOpen: (open: boolean) => void;
@@ -206,8 +210,8 @@ const defaultStudentUser = {
 } as User;
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [authUser, setAuthUser] = useState<User | null>(defaultStudentUser);
-  const [authLoading, setAuthLoading] = useState<boolean>(false);
+  const [authUser, setAuthUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState<boolean>(true);
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState<boolean>(false);
 
   const requestLogout = () => {
@@ -224,7 +228,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Firebase Auth Listener
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setAuthUser(user || defaultStudentUser);
+      setAuthUser(user);
       setAuthLoading(false);
       if (user) {
         setProfileState((prev) => {
@@ -242,74 +246,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => unsubscribe();
   }, []);
 
+  const signInWithEmail = async (email: string, password: string) => {
+    setAuthLoading(true);
+    try {
+      await supabaseSignInWithEmail(email, password);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const signUpWithEmail = async (email: string, password: string, name?: string) => {
+    setAuthLoading(true);
+    try {
+      await supabaseSignUpWithEmail(email, password, name);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
   const signInWithGoogle = async () => {
     try {
-      let userObj: { uid: string; displayName?: string | null; email?: string | null; photoURL?: string | null } | null = null;
-
-      // 1. Primary Attempt: Google Identity Services OAuth (Works across all referer domains without Firebase domain restriction)
-      try {
-        const { requestGoogleSignIn } = await import('../services/googleAuthService');
-        const gUser = await requestGoogleSignIn();
-        userObj = {
-          uid: gUser.uid,
-          displayName: gUser.displayName,
-          email: gUser.email,
-          photoURL: gUser.photoURL,
-        };
-      } catch (gisError: any) {
-        console.warn('GIS Auth attempt notice:', gisError);
-
-        // 2. Secondary Attempt: Firebase Auth popup
-        try {
-          const user = await loginWithGoogle();
-          if (user) {
-            userObj = {
-              uid: user.uid,
-              displayName: user.displayName,
-              email: user.email,
-              photoURL: user.photoURL,
-            };
-          }
-        } catch (fbError: any) {
-          console.warn('Firebase login error:', fbError);
-          // If referer is blocked by Firebase origin restrictions, authenticate seamlessly as Google Student
-          if (
-            fbError?.message?.includes('requests-from-referer') ||
-            fbError?.message?.includes('blocked') ||
-            fbError?.code === 'auth/requests-from-referer-blocked'
-          ) {
-            userObj = {
-              uid: `google_user_${Date.now()}`,
-              displayName: 'Google Academic Student',
-              email: 'student@university.edu',
-              photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-            };
-          } else {
-            throw fbError;
-          }
-        }
-      }
-
-      if (userObj) {
-        setAuthUser(userObj as unknown as User);
-
-        setProfileState((prev) => {
-          const updated = {
-            ...prev,
-            id: userObj.uid,
-            name: userObj.displayName || prev.name || 'Google Student',
-            email: userObj.email || prev.email || '',
-            avatarUrl: userObj.photoURL || prev.avatarUrl || '',
-          };
-          StorageService.saveProfile(updated);
-          return updated;
-        });
-
-        showToast(`Welcome back, ${userObj.displayName || 'Student'}!`, 'success');
-      }
+      // Trigger Supabase OAuth directly
+      await loginWithGoogle();
+      // Note: OAuth redirects, so we don't handle user state here. 
+      // onAuthStateChanged will pick it up on redirect back.
     } catch (error: any) {
-      console.error('Google Sign-in error in provider:', error);
-      showToast('Sign-in cancelled or not completed', 'info');
+      console.error('Sign In Error:', error);
+      throw error;
     }
   };
 
@@ -378,9 +341,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(() => StorageService.getChatMessages());
   const [automations, setAutomations] = useState<Automation[]>([]);
   const [integrations, setIntegrations] = useState<Integration[]>([
-    { id: 'gdrive', name: 'Google Drive', icon: 'drive', description: 'Sync files and backups', status: 'connected' },
-    { id: 'calendar', name: 'Google Calendar', icon: 'calendar', description: 'Sync timetable and events', status: 'available' },
-    { id: 'github', name: 'GitHub', icon: 'github', description: 'Sync coding assignments', status: 'available' }
+    { id: 'google_drive', provider: 'google_drive', status: 'disconnected' },
+    { id: 'google_calendar', provider: 'google_calendar', status: 'disconnected' },
+    { id: 'github', provider: 'github', status: 'disconnected' }
   ]);
   const [activityTimeline, setActivityTimeline] = useState<ActivityEvent[]>([]);
 
@@ -1259,6 +1222,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         authUser,
         authLoading,
         signInWithGoogle,
+        signInWithEmail,
+        signUpWithEmail,
         signInWithFingerprintUser,
         isLogoutModalOpen,
         setIsLogoutModalOpen,

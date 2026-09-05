@@ -7,6 +7,10 @@ import {
   onAuthStateChanged,
   deleteUser,
   User,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
+  updateProfile
 } from 'firebase/auth';
 import { getFirestore, doc, deleteDoc } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
@@ -45,7 +49,7 @@ export const deleteUserCloudAccount = async () => {
     const currentUser = auth.currentUser;
     if (currentUser) {
       try {
-        const db = getFirestore(app);
+        const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
         if (db && currentUser.uid) {
           await deleteDoc(doc(db, 'users', currentUser.uid)).catch((e) =>
             console.warn('Firestore doc delete notice:', e)
@@ -60,6 +64,39 @@ export const deleteUserCloudAccount = async () => {
     }
   } catch (err) {
     console.warn('Error deleting cloud account:', err);
+  }
+};
+
+
+export const signInWithEmail = async (email, password) => {
+  try {
+    const result = await signInWithEmailAndPassword(auth, email, password);
+    return result.user;
+  } catch (error) {
+    console.error('Firebase Email Sign-In Error:', error);
+    throw error;
+  }
+};
+
+export const signUpWithEmail = async (email, password, displayName) => {
+  try {
+    const result = await createUserWithEmailAndPassword(auth, email, password);
+    if (displayName) {
+      await updateProfile(result.user, { displayName });
+    }
+    return result.user;
+  } catch (error) {
+    console.error('Firebase Email Sign-Up Error:', error);
+    throw error;
+  }
+};
+
+export const resetPasswordForEmail = async (email) => {
+  try {
+    await sendPasswordResetEmail(auth, email);
+  } catch (error) {
+    console.error('Firebase Password Reset Error:', error);
+    throw error;
   }
 };
 

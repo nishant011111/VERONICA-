@@ -102,9 +102,14 @@ export function cleanTextForSpeech(text: string): string {
   speech = speech.replace(/\[([^\]]+)\]\([^)]*\)/g, '$1');
 
   // 4. Remove Markdown headers, bullet points, horizontal rules, and formatting
+  // Preserve headings by just stripping the hash
   speech = speech.replace(/^#{1,6}\s+/gm, '');
+  // Preserve bullet points for TTS
+  // Convert them to something spoken or just remove the symbol but keep the structure
+  // Actually, Elevenlabs handles commas or pauses well. Let's just strip the symbol.
   speech = speech.replace(/^[-*+]\s+/gm, '');
-  speech = speech.replace(/^\d+\.\s+/gm, '');
+  // Preserve numbered lists
+  // speech = speech.replace(/^\d+\.\s+/gm, '');
   speech = speech.replace(/---{3,}/g, '');
   speech = speech.replace(/(\*\*|__)(.*?)\1/g, '$2');
   speech = speech.replace(/(\*|_)(.*?)\1/g, '$2');
@@ -140,8 +145,10 @@ export function cleanTextForSpeech(text: string): string {
   speech = speech.replace(/[{}[\]\\/|~@#$%&_<=>]/g, ' ');
 
   // 7. Clean up whitespace and punctuation for smooth cadence
-  speech = speech.replace(/\n+/g, '. ');
-  speech = speech.replace(/\s{2,}/g, ' ');
+  // Keep paragraph breaks, just replace single newlines with spaces, and double newlines with double newlines
+  speech = speech.replace(/\n\n+/g, ' \n\n ');
+  speech = speech.replace(/(?<!\n)\n(?!\n)/g, ' ');
+  speech = speech.replace(/ {2,}/g, ' ');
   speech = speech.replace(/\.{2,}/g, '.');
 
   return speech.trim();

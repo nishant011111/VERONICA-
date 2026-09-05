@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
+import { LoginScreen } from './components/auth/LoginScreen';
 import { Header } from './components/layout/Header';
 import { Sidebar } from './components/layout/Sidebar';
 import { MobileNav } from './components/layout/MobileNav';
@@ -273,6 +274,21 @@ const MainAppContent: React.FC = () => {
 
 const RootAppContent: React.FC = () => {
   const { authUser, authLoading } = useApp();
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+        <div className="animate-pulse flex flex-col items-center">
+          <div className="w-12 h-12 bg-indigo-500 rounded-full mb-4"></div>
+          <p className="text-slate-400 font-medium">Loading Workspace...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!authUser) {
+    return <LoginScreen />;
+  }
 
   return <MainAppContent />;
 };

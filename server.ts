@@ -491,6 +491,61 @@ app.post('/api/ai/embed', async (req, res) => {
   }
 });
 
+
+
+// ElevenLabs TTS API
+app.post('/api/generate-audio', async (req, res) => {
+  try {
+    const apiKey = process.env.ELEVENLABS_API_KEY;
+    if (!apiKey || apiKey.trim().length === 0) {
+      return res.status(500).json({ error: 'ElevenLabs API key is not configured on the server.' });
+    }
+
+    const { text, voiceId, modelId } = req.body;
+    
+    if (!text) {
+      return res.status(400).json({ error: 'Text is required.' });
+    }
+    
+    const targetVoiceId = voiceId || 'EXAVITQu4vr4xnSDxMaL'; // Default voice
+    const targetModelId = modelId || 'eleven_turbo_v2_5';
+    
+    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${targetVoiceId}`, {
+      method: 'POST',
+      headers: {
+        'Accept': 'audio/mpeg',
+        'Content-Type': 'application/json',
+        'xi-api-key': apiKey.trim()
+      },
+      body: JSON.stringify({
+        text: text,
+        model_id: targetModelId,
+        voice_settings: {
+          stability: 0.5,
+          similarity_boost: 0.75
+        }
+      })
+    });
+
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      console.error('ElevenLabs API Error:', response.status, errData);
+      return res.status(response.status).json({ error: 'ElevenLabs API request failed.' });
+    }
+
+    // Send the audio back
+    res.setHeader('Content-Type', 'audio/mpeg');
+    
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    res.send(buffer);
+
+  } catch (error: any) {
+    console.error('TTS Route Error:', error);
+    res.status(500).json({ error: 'Failed to process TTS request.' });
+  }
+});
+
 // Start Server and Vite Handler
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {

@@ -81,7 +81,7 @@ export const AutomationsScreen: React.FC = () => {
                   </div>
                   <div>
                     <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">{auto.name}</h3>
-                    <Badge variant={auto.status === 'active' ? 'green' : 'slate'} className="mt-1 text-[10px]">
+                    <Badge variant={auto.status === 'active' ? 'emerald' : 'slate'} className="mt-1 text-[10px]">
                       {auto.status === 'active' ? 'Active' : 'Paused'}
                     </Badge>
                   </div>
