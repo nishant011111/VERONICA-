@@ -68,6 +68,8 @@ export const defaultSettings: UserSettings = {
   },
   notifications: {
     studyReminders: true,
+    timetableReminders: true,
+    timetableReminderMinutes: 15,
     assignmentReminders: true,
     examReminders: true,
     attendanceAlerts: true,
@@ -102,6 +104,7 @@ export const defaultSettings: UserSettings = {
     explanationLevel: 'university',
     responseStyle: 'balanced',
     saveHistory: true,
+    memoryEnabled: true,
     ollamaHost: 'http://localhost:11434',
     groqApiKey: '',
     geminiApiKey: '',

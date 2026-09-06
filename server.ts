@@ -1,6 +1,6 @@
 import express from 'express';
 import path from 'path';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, Type } from '@google/genai';
 import dotenv from 'dotenv';
 import { GEMINI_PRIMARY_MODEL, GEMINI_FALLBACK_MODELS, GROQ_PRIMARY_MODEL, AI_HEALTH_TEST_PROMPT } from './src/services/ai/config';
 
@@ -122,6 +122,120 @@ app.get('/api/health', (req, res) => {
 });
 
 // Gemini Health Check endpoint - performs real lightweight test prompt "Reply with OK."
+
+// --- OpenAI Endpoints ---
+import OpenAI from 'openai';
+
+app.post('/api/ai/health/openai', async (req, res) => {
+  try {
+    const key = process.env.OPENAI_API_KEY;
+    if (!key || key.trim().length < 10) {
+      return res.json({ available: false, status: 'unavailable', reason: 'Missing backend OPENAI_API_KEY env var' });
+    }
+    const openai = new OpenAI({ apiKey: key });
+    await openai.models.list();
+    res.json({ available: true, status: 'operational', model: 'gpt-5.6-luna' });
+  } catch (err: any) {
+    res.json({ available: false, status: 'unavailable', reason: err.message });
+  }
+});
+
+app.post('/api/ai/openai/chat', async (req, res) => {
+  try {
+    const key = process.env.OPENAI_API_KEY;
+    if (!key || key.trim().length < 10) {
+      return res.status(400).json({ error: 'OPENAI_API_KEY environment variable is not set.' });
+    }
+    const openai = new OpenAI({ apiKey: key });
+    
+    const { model, contents, systemInstruction, messages, temperature } = req.body;
+    const requestedModel = model || 'gpt-5.6-luna';
+
+    const openaiMsgs: any[] = [];
+    if (systemInstruction) openaiMsgs.push({ role: 'system', content: systemInstruction });
+    
+    if (messages && Array.isArray(messages)) {
+      messages.forEach((m: any) => {
+        if (m.sender === 'user' || m.role === 'user') openaiMsgs.push({ role: 'user', content: m.content });
+        else if (m.sender === 'ai' || m.role === 'assistant') openaiMsgs.push({ role: 'assistant', content: m.content });
+      });
+    }
+    
+    // Add the current prompt if not already the last message
+    const lastMsg = openaiMsgs[openaiMsgs.length - 1];
+    if (!lastMsg || lastMsg.content !== contents) {
+      openaiMsgs.push({ role: 'user', content: contents });
+    }
+
+    const response = await openai.chat.completions.create({
+      model: requestedModel,
+      messages: openaiMsgs,
+      temperature: (requestedModel.includes('gpt-5.6') || requestedModel.startsWith('o1') || requestedModel.startsWith('o3')) ? 1 : (temperature ?? 0.7),
+    });
+
+    res.json({
+      text: response.choices[0]?.message?.content || '',
+      provider: 'OpenAI',
+      model: response.model || requestedModel,
+    });
+  } catch (err: any) {
+    // console.error('OpenAI Chat Error:', err);
+    res.status(500).json({ error: err.message || 'OpenAI request failed' });
+  }
+});
+
+app.post('/api/ai/openai/stream', async (req, res) => {
+  try {
+    const key = process.env.OPENAI_API_KEY;
+    if (!key || key.trim().length < 10) {
+      return res.status(400).json({ error: 'OPENAI_API_KEY environment variable is not set.' });
+    }
+    const openai = new OpenAI({ apiKey: key });
+    
+    const { model, contents, systemInstruction, messages, temperature } = req.body;
+    const requestedModel = model || 'gpt-5.6-luna';
+
+    const openaiMsgs: any[] = [];
+    if (systemInstruction) openaiMsgs.push({ role: 'system', content: systemInstruction });
+    
+    if (messages && Array.isArray(messages)) {
+      messages.forEach((m: any) => {
+        if (m.sender === 'user' || m.role === 'user') openaiMsgs.push({ role: 'user', content: m.content });
+        else if (m.sender === 'ai' || m.role === 'assistant') openaiMsgs.push({ role: 'assistant', content: m.content });
+      });
+    }
+    
+    const lastMsg = openaiMsgs[openaiMsgs.length - 1];
+    if (!lastMsg || lastMsg.content !== contents) {
+      openaiMsgs.push({ role: 'user', content: contents });
+    }
+
+    const stream = await openai.chat.completions.create({
+      model: requestedModel,
+      messages: openaiMsgs,
+      temperature: (requestedModel.includes('gpt-5.6') || requestedModel.startsWith('o1') || requestedModel.startsWith('o3')) ? 1 : (temperature ?? 0.7),
+      stream: true,
+    });
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    for await (const chunk of stream) {
+      const text = chunk.choices[0]?.delta?.content || '';
+      res.write(`data: ${JSON.stringify({ text, model: chunk.model })}\n\n`);
+    }
+    res.write('data: [DONE]\n\n');
+    res.end();
+  } catch (err: any) {
+    // console.error('OpenAI Stream Error:', err);
+    res.write(`data: ${JSON.stringify({ error: err.message || 'OpenAI stream failed' })}\n\n`);
+    res.end();
+  }
+});
+
+// --- End OpenAI Endpoints ---
+
 app.post('/api/ai/health/gemini', async (req, res) => {
   const apiKey = req.body?.apiKey || process.env.GEMINI_API_KEY;
   if (!apiKey || apiKey.trim().length < 5) {
@@ -338,7 +452,7 @@ app.post('/api/ai/groq/chat', async (req, res) => {
       model: requestedModel
     });
   } catch (error: any) {
-    console.error('Groq API Error:', error);
+    // console.error('Groq API Error:', error);
     const msg = error.message || '';
     if (msg.includes('fetch failed') || msg.includes('network')) {
       return res.status(502).json({ error: 'Unable to connect to Groq.' });
@@ -348,6 +462,112 @@ app.post('/api/ai/groq/chat', async (req, res) => {
 });
 
 // Gemini Non-Streaming Chat API
+
+// Timetable Vision Extraction API
+app.post('/api/ai/vision/timetable', async (req, res) => {
+  try {
+    const apiKey = req.body.apiKey || process.env.GEMINI_API_KEY;
+    if (!apiKey || apiKey.trim().length < 5) {
+      return res.status(400).json({ error: 'Gemini API key is not configured.' });
+    }
+    const { imageBase64, mimeType } = req.body;
+    if (!imageBase64) {
+      return res.status(400).json({ error: 'Image data is required.' });
+    }
+
+    const ai = new GoogleGenAI({ apiKey });
+    
+    // Create the schema
+    const responseSchema = {
+      type: Type.OBJECT,
+      properties: {
+        timetable_name: { type: Type.STRING },
+        academic_year: { type: Type.STRING },
+        semester: { type: Type.STRING },
+        days: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              day: { type: Type.STRING, description: "Monday, Tuesday, etc." },
+              classes: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    start_time: { type: Type.STRING, description: "HH:mm format, e.g. 09:00" },
+                    end_time: { type: Type.STRING, description: "HH:mm format, e.g. 10:00" },
+                    subject: { type: Type.STRING },
+                    subject_code: { type: Type.STRING },
+                    faculty: { type: Type.STRING },
+                    room: { type: Type.STRING },
+                    building: { type: Type.STRING },
+                    type: { type: Type.STRING, description: "lecture, lab, tutorial, seminar, other" },
+                    section: { type: Type.STRING },
+                    confidence: { type: Type.NUMBER, description: "0.0 to 1.0 confidence score of extraction" }
+                  },
+                  required: ["start_time", "end_time", "subject"]
+                }
+              }
+            }
+          }
+        }
+      },
+      required: ["days"]
+    };
+
+    const imagePart = {
+      inlineData: {
+        mimeType: mimeType || "image/jpeg",
+        data: imageBase64,
+      },
+    };
+    
+    const textPart = {
+      text: "Analyze this university class timetable image and extract the classes into the requested JSON structure. Accurately identify the days, start times, end times, subject names, room numbers, and teachers. Handle merged cells carefully. Infer class types if possible (e.g., 'lab' if it says practical). If a field cannot be determined, leave it empty."
+    };
+
+    let response;
+    let attempts = 0;
+    const maxAttempts = 3;
+    while (attempts < maxAttempts) {
+      try {
+        const modelName = attempts === maxAttempts - 1 ? "gemini-flash-latest" : "gemini-3.8-flash";
+        response = await ai.models.generateContent({
+          model: modelName,
+          contents: { parts: [imagePart, textPart] },
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: responseSchema,
+            temperature: 0.2
+          }
+        });
+        break;
+      } catch (err) {
+        attempts++;
+        if (attempts >= maxAttempts) {
+            // console.error('All Gemini API attempts failed.', err);
+            throw err;
+        }
+        console.warn(`Gemini API error (${err.message}). Retrying ${attempts}/${maxAttempts}...`);
+        await new Promise(resolve => setTimeout(resolve, 1500 * Math.pow(2, attempts)));
+      }
+    }
+
+    if (!response || !response.text) {
+      throw new Error('Gemini failed to return text.');
+    }
+
+    const parsedJson = JSON.parse(response.text.trim());
+    res.json(parsedJson);
+
+  } catch (error: any) {
+    // console.error('Vision API Error:', error);
+    res.status(500).json({ error: error.message || 'Failed to analyze timetable' });
+  }
+});
+
+
 app.post('/api/ai/chat', async (req, res) => {
   try {
     const apiKey = req.body.apiKey || process.env.GEMINI_API_KEY;
@@ -359,15 +579,31 @@ app.post('/api/ai/chat', async (req, res) => {
 
     const ai = new GoogleGenAI({ apiKey });
     const requestedModel = req.body.model || GEMINI_PRIMARY_MODEL;
+
+    let geminiContents: any = req.body.contents;
+    if (req.body.messages && Array.isArray(req.body.messages)) {
+      geminiContents = [];
+      req.body.messages.forEach((m: any) => {
+        const role = (m.sender === 'user' || m.role === 'user') ? 'user' : 'model';
+        geminiContents.push({ role, parts: [{ text: m.content }] });
+      });
+      // Append current prompt if not present
+      const lastMsg = geminiContents[geminiContents.length - 1];
+      if (!lastMsg || lastMsg.parts[0].text !== req.body.contents) {
+        geminiContents.push({ role: 'user', parts: [{ text: req.body.contents }] });
+      }
+    }
+
     let response = null;
 
     try {
       response = await ai.models.generateContent({
         model: requestedModel,
-        contents: req.body.contents,
+        contents: geminiContents,
         config: {
           systemInstruction: req.body.systemInstruction,
-          temperature: req.body.temperature ?? 0.7
+          temperature: req.body.temperature ?? 0.7,
+          tools: [{ googleSearch: {} }]
         }
       });
     } catch (err: any) {
@@ -384,7 +620,7 @@ app.post('/api/ai/chat', async (req, res) => {
       model: requestedModel
     });
   } catch (error: any) {
-    console.error('Gemini API Error:', error);
+    // console.error('Gemini API Error:', error);
     const userFriendlyError = classifyGeminiError(error);
     res.status(500).json({ error: userFriendlyError });
   }
@@ -402,15 +638,31 @@ app.post('/api/ai/stream', async (req, res) => {
 
     const ai = new GoogleGenAI({ apiKey });
     const requestedModel = req.body.model || GEMINI_PRIMARY_MODEL;
+
+    let geminiContents: any = req.body.contents;
+    if (req.body.messages && Array.isArray(req.body.messages)) {
+      geminiContents = [];
+      req.body.messages.forEach((m: any) => {
+        const role = (m.sender === 'user' || m.role === 'user') ? 'user' : 'model';
+        geminiContents.push({ role, parts: [{ text: m.content }] });
+      });
+      // Append current prompt if not present
+      const lastMsg = geminiContents[geminiContents.length - 1];
+      if (!lastMsg || lastMsg.parts[0].text !== req.body.contents) {
+        geminiContents.push({ role: 'user', parts: [{ text: req.body.contents }] });
+      }
+    }
+
     let activeStream: AsyncIterable<any> | null = null;
 
     try {
       const stream = await ai.models.generateContentStream({
         model: requestedModel,
-        contents: req.body.contents,
+        contents: geminiContents,
         config: {
           systemInstruction: req.body.systemInstruction,
-          temperature: req.body.temperature ?? 0.7
+          temperature: req.body.temperature ?? 0.7,
+          tools: [{ googleSearch: {} }]
         }
       });
 
@@ -448,7 +700,7 @@ app.post('/api/ai/stream', async (req, res) => {
     res.write('data: [DONE]\n\n');
     res.end();
   } catch (error: any) {
-    console.error('Gemini Stream Error:', error);
+    // console.error('Gemini Stream Error:', error);
     const userFriendlyError = classifyGeminiError(error);
 
     if (!res.headersSent) {
@@ -486,7 +738,7 @@ app.post('/api/ai/embed', async (req, res) => {
       res.status(500).json({ error: 'Failed to generate embedding' });
     }
   } catch (error: any) {
-    console.error('Gemini Embed Error:', error);
+    // console.error('Gemini Embed Error:', error);
     res.status(500).json({ error: error.message || 'Failed to generate embedding' });
   }
 });

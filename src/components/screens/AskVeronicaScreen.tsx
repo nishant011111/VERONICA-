@@ -2,6 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { useApp } from '../../context/AppContext';
 import { AIRouter } from '../../services/ai/AIRouter';
+import { MemoryService } from '../../services/ai/MemoryService';
+import { vectorDB } from '../../services/ai/VectorDatabase';
+import { AI_PROVIDERS_CONFIG } from '../../services/ai/config';
 import { AIErrorHandler } from '../../services/ai/AIErrorHandler';
 import { retrievalService } from '../../services/kb/RetrievalService';
 import { ConversationService } from '../../services/ai/conversationService';
@@ -61,7 +64,7 @@ import {
 } from '../../types';
 
 export const AskVeronicaScreen: React.FC = () => {
-  const { profile, settings, kbDocuments, updateSettings, subjects, notes, vaultFiles, assignments, showToast, tasks, exams, goals } = useApp();
+  const { profile, timetable, settings, kbDocuments, updateSettings, subjects, notes, vaultFiles, assignments, showToast, tasks, exams, goals } = useApp();
 
   // Active AI Parameters
   const [academicMode, setAcademicMode] = useState<AcademicMode>('general');
@@ -137,7 +140,7 @@ export const AskVeronicaScreen: React.FC = () => {
 
   const speakText = (text: string, msgId?: string) => {
     // Toggle off if currently speaking the exact same message
-    if (msgId && speakingMsgId === msgId && ttsService.isPlaying(msgId)) {
+    if (msgId && speakingMsgId === msgId) {
       stopSpeaking();
       return;
     }
@@ -156,6 +159,15 @@ export const AskVeronicaScreen: React.FC = () => {
   // Load User Conversations on mount or user change
   useEffect(() => {
     const loaded = ConversationService.getConversations(userId);
+    ConversationService.loadFromFirebase(userId).then((fbConvs) => {
+      if (fbConvs && fbConvs.length > 0) {
+        setConversations(fbConvs);
+        if (!activeConvId) {
+          setActiveConvId(fbConvs[0].id);
+          setMessages(fbConvs[0].messages || []);
+        }
+      }
+    });
     setConversations(loaded);
     if (loaded.length > 0 && !activeConvId) {
       setActiveConvId(loaded[0].id);
@@ -233,7 +245,11 @@ export const AskVeronicaScreen: React.FC = () => {
       pdfContent: selectedPdf ? (selectedPdf.fileData || `Attached Vault File: ${selectedPdf.name} (${selectedPdf.type || 'document'})`) : undefined,
       assignmentTitle: selectedAssign?.title,
       assignmentDescription: selectedAssign?.description,
-      systemContext: ContextEngine.formatContextForPrompt(systemContext)
+      systemContext: ContextEngine.formatContextForPrompt(systemContext),
+      timetableStr: timetable && timetable.length > 0 ? 'Weekly Timetable:\n' + timetable.map(t => {
+        const subj = subjects.find(s => s.id === t.subjectId);
+        return `- Day ${t.dayOfWeek}, ${t.startTime}-${t.endTime}: ${subj ? subj.name : 'Class'} (${t.type}) in ${t.room || 'TBA'} by ${t.teacher || 'TBA'}`
+      }).join('\n') : undefined
     };
   };
 
@@ -305,6 +321,30 @@ export const AskVeronicaScreen: React.FC = () => {
         setStreamingText('');
       }
 
+
+      let relevantMemories: string[] = undefined;
+      let pastConvs: string[] = undefined;
+
+      if (settings.ai.memoryEnabled) {
+          try {
+              const embed = await MemoryService.getEmbedding(fullPrompt);
+              if (embed) {
+                  const pastResults = await vectorDB.search(embed, 'conversation', 2);
+                  if (pastResults.length > 0) pastConvs = pastResults.filter(r => r.score > 0.6).map(r => r.text);
+
+                  const allMemories = MemoryService.getMemories(userId);
+                  if (allMemories.length <= 15) {
+                      relevantMemories = allMemories.map(m => m.content);
+                  } else {
+                      const memResults = await vectorDB.search(embed, 'memory', 10);
+                      relevantMemories = memResults.map(r => r.text);
+                  }
+              }
+          } catch (e) {
+              console.error('Memory retrieval failed:', e);
+          }
+      }
+
       const response = await AIRouter.streamResponse(
         fullPrompt,
         settings.ai,
@@ -312,9 +352,12 @@ export const AskVeronicaScreen: React.FC = () => {
           academicMode,
           explanationLevel,
           responseStyle,
+          messages: messages.map(m => ({ role: m.sender === 'user' ? 'user' : 'assistant', content: m.content })),
           context: {
             ...baseContext,
-            ragChunks
+            ragChunks,
+            memories: relevantMemories,
+            pastConversations: pastConvs
           },
           systemPromptOverride: useKnowledgeBaseMode ? "You are in STRICT KNOWLEDGE BASE MODE. You MUST answer the user's question ONLY using the attached KNOWLEDGE BASE SOURCES. Do NOT use outside knowledge. If the answer is not contained in the sources, say 'I cannot find the answer to this in your notes.'" : undefined,
           signal: abortControllerRef.current.signal
@@ -344,6 +387,37 @@ export const AskVeronicaScreen: React.FC = () => {
       if (autoSpeech) {
         speakText(veronicaMsg.content, veronicaMsg.id);
       }
+
+      // ---------------------------------------------------------
+      // MEMORY & VECTOR EXTRACTION (BACKGROUND)
+      // ---------------------------------------------------------
+      if (settings.ai.memoryEnabled) {
+          setTimeout(async () => {
+              try {
+                  // Extract long-term facts
+                  await MemoryService.extractMemories(userId, [...nextMessages, veronicaMsg], settings.ai);
+                  
+                  // Embed the chat segment for Semantic Conversation Search
+                  const segmentText = `User: ${fullPrompt}\nVeronica: ${cleanedContent}`;
+                  const embed = await MemoryService.getEmbedding(segmentText);
+                  if (embed) {
+                      await vectorDB.upsert({
+                          id: activeConvId + '_' + Date.now(),
+                          text: segmentText,
+                          embedding: embed,
+                          metadata: {
+                              type: 'conversation',
+                              conversationId: activeConvId
+                          }
+                      });
+                  }
+              } catch (e) {
+                  console.warn('Background extraction failed', e);
+              }
+          }, 500); // Small delay to avoid blocking UI thread
+      }
+      // ---------------------------------------------------------
+
     } catch (err: any) {
 
       if (err.name === 'AbortError') {
@@ -473,14 +547,37 @@ export const AskVeronicaScreen: React.FC = () => {
           <div className="relative">
              <select
                 value={settings.ai.activeProvider}
-                onChange={(e) => updateSettings({ ai: { ...settings.ai, activeProvider: e.target.value as any } })}
+                onChange={(e) => {
+                  const newProvider = e.target.value as any;
+                  const newPrimary = AI_PROVIDERS_CONFIG[newProvider as keyof typeof AI_PROVIDERS_CONFIG]?.primaryModel;
+                  updateSettings({ ai: { ...settings.ai, activeProvider: newProvider, activeModel: newPrimary } });
+                }}
                 className="px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-700 dark:text-slate-300 focus:outline-none"
              >
+                <option value="openai">OpenAI (ChatGPT)</option>
                 <option value="gemini">Gemini</option>
                 <option value="groq">Groq</option>
                 <option value="ollama">Ollama</option>
              </select>
           </div>
+          
+          {/* Model Selector */}
+          {settings.ai.activeProvider && AI_PROVIDERS_CONFIG[settings.ai.activeProvider as keyof typeof AI_PROVIDERS_CONFIG] && (
+            <div className="relative">
+               <select
+                  value={settings.ai.activeModel || AI_PROVIDERS_CONFIG[settings.ai.activeProvider as keyof typeof AI_PROVIDERS_CONFIG].primaryModel}
+                  onChange={(e) => updateSettings({ ai: { ...settings.ai, activeModel: e.target.value } })}
+                  className="px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-700 dark:text-slate-300 focus:outline-none"
+               >
+                  <option value={AI_PROVIDERS_CONFIG[settings.ai.activeProvider as keyof typeof AI_PROVIDERS_CONFIG].primaryModel}>
+                    {AI_PROVIDERS_CONFIG[settings.ai.activeProvider as keyof typeof AI_PROVIDERS_CONFIG].primaryModel}
+                  </option>
+                  {AI_PROVIDERS_CONFIG[settings.ai.activeProvider as keyof typeof AI_PROVIDERS_CONFIG].fallbackModels.map(m => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+               </select>
+            </div>
+          )}
 
           {/* Academic Subject Mode */}
           <div className="flex items-center bg-slate-100 dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-800">

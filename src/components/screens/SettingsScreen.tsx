@@ -116,12 +116,14 @@ export const SettingsScreen: React.FC = () => {
 
   // Notifications state
   const [notifyStudy, setNotifyStudy] = useState(true);
+  const [notifyTimetable, setNotifyTimetable] = useState(settings.notifications?.timetableReminders !== false);
   const [notifyAssignment, setNotifyAssignment] = useState(true);
   const [notifyExam, setNotifyExam] = useState(true);
   const [notifyAttendance, setNotifyAttendance] = useState(true);
 
   // AI Provider state
   const [activeProvider, setActiveProvider] = useState<AIProviderType>(settings.ai?.activeProvider || 'gemini');
+  const [memoryEnabled, setMemoryEnabled] = useState(settings.ai?.memoryEnabled !== false);
   const [activeModel, setActiveModel] = useState(settings.ai?.activeModel || GEMINI_PRIMARY_MODEL);
   const [availableModels, setAvailableModels] = useState<string[]>([]);
 
@@ -437,6 +439,7 @@ export const SettingsScreen: React.FC = () => {
 
         <div className="space-y-3">
           {[
+            { id: 'timetable', label: 'Class Timetable Reminders', state: notifyTimetable, set: (val) => { setNotifyTimetable(val); updateSettings({ notifications: { ...settings.notifications, timetableReminders: val } }); } },
             { id: 'study', label: 'Study Timer & Break Reminders', state: notifyStudy, set: setNotifyStudy },
             { id: 'assign', label: 'Assignment Deadline Alerts', state: notifyAssignment, set: setNotifyAssignment },
             { id: 'exam', label: 'Exam Countdown & Revision Reminders', state: notifyExam, set: setNotifyExam },
@@ -477,6 +480,7 @@ export const SettingsScreen: React.FC = () => {
               onChange={(e) => setActiveProvider(e.target.value as AIProviderType)}
               className="w-full px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-800 text-xs text-slate-800 dark:text-slate-200 focus:outline-none"
             >
+              <option value="openai">OpenAI (ChatGPT)</option>
               <option value="gemini">Gemini</option>
               <option value="groq">Groq</option>
               <option value="ollama">Ollama</option>
@@ -830,6 +834,38 @@ export const SettingsScreen: React.FC = () => {
               </Button>
             </div>
           </div>
+        </div>
+      </Card>
+
+      {/* Account & Session Management */}
+      <Card glass className="space-y-4 border-slate-200 dark:border-slate-800">
+        <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+          <div className="flex items-center gap-2">
+            <User className="w-5 h-5 text-blue-500" />
+            <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider">
+              Account Session
+            </h3>
+          </div>
+          <Badge variant="blue" size="sm">Active</Badge>
+        </div>
+
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <p className="text-sm font-bold text-slate-900 dark:text-slate-100">
+              Sign Out of Device
+            </p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Securely sign out of your account on this device. Your data will remain safely stored in the cloud.
+            </p>
+          </div>
+          <Button
+            variant="secondary"
+            onClick={requestLogout}
+            icon={<LogOut className="w-4 h-4" />}
+            className="py-2.5 px-5 font-bold text-xs shrink-0"
+          >
+            Sign Out
+          </Button>
         </div>
       </Card>
 

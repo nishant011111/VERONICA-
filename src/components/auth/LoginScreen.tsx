@@ -32,7 +32,7 @@ const parseAuthError = (err: any, fallbackMessage: string) => {
 };
 
 export const LoginScreen: React.FC = () => {
-  const { signInWithGoogle, signInWithEmail, signUpWithEmail, signInWithFingerprintUser, addToast } = useApp();
+  const { signInWithGoogle, signInWithEmail, signUpWithEmail, signInWithFingerprintUser, showToast } = useApp();
   const [loading, setLoading] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
@@ -54,7 +54,7 @@ export const LoginScreen: React.FC = () => {
       setError(null);
       await resetPasswordForEmail(email);
       setResetEmailSent(true);
-      addToast('Password reset email sent. Check your inbox.', 'success');
+      showToast('Password reset email sent. Check your inbox.', 'success');
     } catch (err: any) {
       console.error('Password reset error:', err);
       setError(parseAuthError(err, 'Failed to send password reset email.'));

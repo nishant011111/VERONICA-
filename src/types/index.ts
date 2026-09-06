@@ -41,7 +41,7 @@ export interface UserProfile {
 }
 
 export type AIMode = 'automatic' | 'online' | 'local' | 'offline';
-export type AIProviderType = 'gemini' | 'groq' | 'ollama';
+export type AIProviderType = 'openai' | 'gemini' | 'groq' | 'ollama';
 export type ExplanationLevel = 'beginner' | 'university' | 'advanced';
 export type ResponseStyle = 'concise' | 'balanced' | 'detailed';
 export type AcademicMode = 'general' | 'physics' | 'mathematics' | 'programming';
@@ -67,6 +67,8 @@ export interface UserSettings {
     assignmentReminders: boolean;
     examReminders: boolean;
     attendanceAlerts: boolean;
+    timetableReminders: boolean;
+    timetableReminderMinutes: number;
     systemAlerts?: boolean;
     syncAlerts?: boolean;
   };
@@ -86,6 +88,7 @@ export interface UserSettings {
     explanationLevel: ExplanationLevel;
     responseStyle: ResponseStyle;
     saveHistory: boolean;
+    memoryEnabled: boolean;
     ollamaHost: string;
     groqApiKey?: string;
     geminiApiKey?: string;
@@ -501,4 +504,13 @@ export interface Integration {
   status: 'connected' | 'disconnected' | 'error';
   lastSync?: string;
   accountEmail?: string;
+}
+
+export interface AIMemory {
+  id: string;
+  userId: string;
+  content: string;
+  category: 'preference' | 'project' | 'fact' | 'instruction';
+  createdAt: string;
+  updatedAt: string;
 }

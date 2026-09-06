@@ -18,6 +18,9 @@ export interface AIContextData {
   assignmentDescription?: string;
   topic?: string;
   ragChunks?: { content: string, source: string, pageNumber?: number }[];
+  memories?: string[];
+  pastConversations?: string[];
+  timetableStr?: string;
 }
 
 export interface AIRequestOptions {
@@ -32,6 +35,7 @@ export interface AIRequestOptions {
   groqApiKey?: string;
   ollamaHost?: string;
   providerOverride?: string;
+  messages?: { role: string; content: string }[];
   signal?: AbortSignal;
 }
 

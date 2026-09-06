@@ -41,17 +41,18 @@ export class AIErrorHandler {
     }
 
     const errStr = String(rawMsg);
+    const lowerErr = errStr.toLowerCase();
 
     // 1. Missing API Key / Not Configured
     if (
-      errStr.includes('API key is not configured') ||
-      errStr.includes('API key is missing') ||
-      errStr.includes('GEMINI_API_KEY environment variable not set')
+      lowerErr.includes('api key is not configured') ||
+      lowerErr.includes('api key is missing') ||
+      lowerErr.includes('environment variable') || lowerErr.includes('API key is not set')
     ) {
       return {
         code: 'AUTH_FAILURE',
-        title: 'Gemini API Key Missing',
-        message: 'Gemini API key is not configured.',
+        title: 'AI API Key Missing',
+        message: 'AI API key is not configured.',
         suggestion: 'Add your GEMINI_API_KEY in environment variables or AI Settings.',
         retryable: false,
         originalMessage: rawMsg
@@ -60,17 +61,17 @@ export class AIErrorHandler {
 
     // 2. Authentication Failures (401, 403, UNAUTHENTICATED, invalid key)
     if (
-      errStr.includes('401') ||
-      errStr.includes('403') ||
-      errStr.includes('UNAUTHENTICATED') ||
-      errStr.includes('authentication failed') ||
-      errStr.includes('Authentication failed') ||
-      errStr.includes('Invalid or unauthenticated')
+      lowerErr.includes('401') ||
+      lowerErr.includes('403') ||
+      lowerErr.includes('unauthenticated') ||
+      lowerErr.includes('authentication failed') ||
+      lowerErr.includes('authentication failed') ||
+      lowerErr.includes('invalid or unauthenticated')
     ) {
       return {
         code: 'AUTH_FAILURE',
-        title: 'Gemini Authentication Failed',
-        message: 'Gemini authentication failed. Check your API key and project permissions.',
+        title: 'AI Authentication Failed',
+        message: 'AI authentication failed. Check your API key and project permissions.',
         suggestion: 'Verify your GEMINI_API_KEY in Settings.',
         retryable: false,
         originalMessage: rawMsg
@@ -79,17 +80,17 @@ export class AIErrorHandler {
 
     // 3. Rate Limit Exceeded (429, RESOURCE_EXHAUSTED)
     if (
-      errStr.includes('429') ||
-      errStr.includes('RESOURCE_EXHAUSTED') ||
-      errStr.includes('rate-limited') ||
-      errStr.includes('Rate limit') ||
-      errStr.includes('rate limit reached') ||
-      errStr.includes('Quota exceeded')
+      lowerErr.includes('429') ||
+      lowerErr.includes('resource_exhausted') ||
+      lowerErr.includes('rate-limited') ||
+      lowerErr.includes('rate limit') ||
+      lowerErr.includes('rate limit reached') ||
+      lowerErr.includes('quota exceeded')
     ) {
       return {
         code: 'RATE_LIMIT_EXCEEDED',
-        title: 'Gemini Rate Limit Reached',
-        message: 'Gemini rate limit reached. Please wait a moment or use another AI provider.',
+        title: 'AI Rate Limit Reached',
+        message: 'AI rate limit reached. Please wait a moment or use another AI provider.',
         suggestion: 'Wait a few seconds or switch to Local AI mode in Settings.',
         retryable: true,
         suggestedMode: 'local',
@@ -99,19 +100,19 @@ export class AIErrorHandler {
 
     // 4. Service Unavailable / Overloaded (503, 500, 502, UNAVAILABLE, high demand)
     if (
-      errStr.includes('503') ||
-      errStr.includes('500') ||
-      errStr.includes('502') ||
-      errStr.includes('UNAVAILABLE') ||
-      errStr.includes('high demand') ||
-      errStr.includes('overloaded') ||
-      errStr.includes('Service Unavailable') ||
-      errStr.includes('temporarily unavailable')
+      lowerErr.includes('503') ||
+      lowerErr.includes('500') ||
+      lowerErr.includes('502') ||
+      lowerErr.includes('unavailable') ||
+      lowerErr.includes('high demand') ||
+      lowerErr.includes('overloaded') ||
+      lowerErr.includes('service unavailable') ||
+      lowerErr.includes('temporarily unavailable')
     ) {
       return {
         code: 'SERVICE_UNAVAILABLE',
-        title: 'Gemini Service Temporarily Unavailable',
-        message: 'Gemini service is temporarily unavailable. Retrying with fallback.',
+        title: 'AI Service Temporarily Unavailable',
+        message: 'AI service is temporarily unavailable. Retrying with fallback.',
         suggestion: 'Please try again in a few moments or switch to Local AI.',
         retryable: true,
         suggestedMode: 'local',
@@ -121,15 +122,15 @@ export class AIErrorHandler {
 
     // 5. Model Not Found / Deprecated (404, NOT_FOUND)
     if (
-      errStr.includes('404') ||
-      errStr.includes('NOT_FOUND') ||
-      errStr.includes('no longer available') ||
-      errStr.includes('not found')
+      lowerErr.includes('404') ||
+      lowerErr.includes('not_found') ||
+      lowerErr.includes('no longer available') ||
+      lowerErr.includes('not found')
     ) {
       return {
         code: 'MODEL_NOT_FOUND',
-        title: 'Gemini Model Unavailable',
-        message: 'Gemini model or endpoint is unavailable. Veronica will try a supported fallback model.',
+        title: 'AI Model Unavailable',
+        message: 'AI model or endpoint is unavailable. Veronica will try a supported fallback model.',
         suggestion: `Veronica is routing your request to ${GEMINI_PRIMARY_MODEL} automatically.`,
         retryable: true,
         originalMessage: rawMsg
@@ -138,17 +139,17 @@ export class AIErrorHandler {
 
     // 6. Offline / Network Disconnected
     if (
-      errStr.includes('offline') ||
-      errStr.includes('Failed to fetch') ||
-      errStr.includes('NetworkError') ||
-      errStr.includes('Internet connection unavailable') ||
-      errStr.includes('Unable to reach Gemini') ||
-      errStr.includes('network')
+      lowerErr.includes('offline') ||
+      lowerErr.includes('failed to fetch') ||
+      lowerErr.includes('networkerror') ||
+      lowerErr.includes('internet connection unavailable') ||
+      lowerErr.includes('Unable to reach AI') ||
+      lowerErr.includes('network')
     ) {
       return {
         code: 'OFFLINE_NETWORK',
         title: 'Network Connection Required',
-        message: 'Unable to reach Gemini. Check your internet connection.',
+        message: 'Unable to reach AI. Check your internet connection.',
         suggestion: 'Check your Wi-Fi/cellular connection or launch Ollama for Local AI.',
         retryable: true,
         suggestedMode: 'offline',
@@ -158,10 +159,10 @@ export class AIErrorHandler {
 
     // 7. Local Provider Offline
     if (
-      errStr.includes('Ollama') ||
-      errStr.includes('Local AI') ||
-      errStr.includes('http://localhost:11434') ||
-      errStr.includes('11434')
+      lowerErr.includes('ollama') ||
+      lowerErr.includes('local ai') ||
+      lowerErr.includes('http://localhost:11434') ||
+      lowerErr.includes('11434')
     ) {
       return {
         code: 'LOCAL_PROVIDER_OFFLINE',
@@ -177,7 +178,7 @@ export class AIErrorHandler {
     // Clean fallback message without raw JSON
     let cleanMessage = errStr.replace(/\{.*?\}/g, '').trim();
     if (!cleanMessage || cleanMessage.length < 3) {
-      cleanMessage = 'An unexpected issue occurred while communicating with Gemini Cloud AI.';
+      cleanMessage = 'An unexpected issue occurred while communicating with AI Cloud AI.';
     }
 
     return {

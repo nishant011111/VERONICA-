@@ -6,6 +6,8 @@ import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
 import { EmptyState } from '../ui/EmptyState';
 import { EditSubjectModal } from '../forms/EditSubjectModal';
+import { ImportTimetableModal } from '../forms/ImportTimetableModal';
+import { ImageIcon } from 'lucide-react';
 import {
   Clock,
   Plus,
@@ -29,6 +31,7 @@ export const TimetableScreen: React.FC<TimetableScreenProps> = ({
   const [viewMode, setViewMode] = useState<'day' | 'week'>('week');
   const [selectedDay, setSelectedDay] = useState<number>(new Date().getDay() || 7);
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   const days = [
     { value: 1, label: 'Mon', fullLabel: 'Monday' },
@@ -69,13 +72,23 @@ export const TimetableScreen: React.FC<TimetableScreenProps> = ({
           </button>
         </div>
 
-        <Button
-          variant="primary"
-          onClick={() => onOpenTimetableModal(null, selectedDay)}
-          icon={<Plus className="w-4 h-4" />}
-        >
-          Add Class
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="secondary"
+            onClick={() => setIsImportModalOpen(true)}
+            icon={<ImageIcon className="w-4 h-4 text-blue-500" />}
+            className="text-xs font-bold"
+          >
+            Import
+          </Button>
+          <Button
+            variant="primary"
+            onClick={() => onOpenTimetableModal(null, selectedDay)}
+            icon={<Plus className="w-4 h-4" />}
+          >
+            Add Class
+          </Button>
+        </div>
       </div>
 
       {/* Day Selector Tabs if in Day Mode */}
@@ -274,6 +287,10 @@ export const TimetableScreen: React.FC<TimetableScreenProps> = ({
         isOpen={!!editingSubject}
         onClose={() => setEditingSubject(null)}
         subject={editingSubject}
+      />
+      <ImportTimetableModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
       />
     </div>
   );

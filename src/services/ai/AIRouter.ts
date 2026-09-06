@@ -13,7 +13,66 @@ import {
   AIProviderType
 } from '../../types';
 
+import { AIErrorHandler } from './AIErrorHandler';
+
 class AIRouterService {
+  private getFallbackChain(activeProvider: string): string[] {
+    const defaultChain = ['gemini', 'openai', 'ollama'];
+    const chain = new Set([activeProvider, ...defaultChain]);
+    return Array.from(chain);
+  }
+
+  private async executeWithFallback<T>(
+    aiSettings: UserSettings['ai'],
+    options: AIRequestOptions,
+    operation: (provider: AIProvider, mergedOptions: AIRequestOptions) => Promise<T>,
+    onChunkProxy?: { hasYielded: boolean }
+  ): Promise<T> {
+    const chain = this.getFallbackChain(aiSettings.activeProvider);
+    let lastError: any = null;
+    let attempted = 0;
+
+    for (const providerId of chain) {
+      const provider = AIProviderManager.getProvider(providerId);
+      if (!provider) continue;
+
+      const mergedOptions: AIRequestOptions = {
+        explanationLevel: options.explanationLevel || aiSettings.explanationLevel,
+        responseStyle: options.responseStyle || aiSettings.responseStyle,
+        userApiKey: providerId === 'groq' ? aiSettings.groqApiKey : aiSettings.geminiApiKey,
+        groqApiKey: aiSettings.groqApiKey,
+        ollamaHost: aiSettings.ollamaHost,
+        model: providerId === aiSettings.activeProvider ? (options.model || aiSettings.activeModel) : undefined,
+        ...options
+      };
+
+      try {
+        attempted++;
+        return await operation(provider, mergedOptions);
+      } catch (err: any) {
+        lastError = err;
+        
+        // If it already yielded chunks, we can't safely fallback and restart the stream
+        if (onChunkProxy && onChunkProxy.hasYielded) {
+          throw err; 
+        }
+
+        const parsedError = AIErrorHandler.parse(err);
+        console.warn(`[AIRouter] Provider ${providerId} failed: ${parsedError.code} - ${parsedError.message}. Trying next fallback...`);
+      }
+    }
+
+    if (lastError) {
+      const parsed = AIErrorHandler.parse(lastError);
+      if (attempted > 1) {
+         throw new Error('All AI providers are currently unavailable or unconfigured. Please check your active provider and API keys in AI Settings.');
+      }
+      throw lastError;
+    }
+    
+    throw new Error('No AI provider is currently configured.');
+  }
+
 
   /** Resolve appropriate AI provider based on user settings */
   private async getProvider(aiSettings: UserSettings['ai']): Promise<AIProvider> {
@@ -28,104 +87,35 @@ class AIRouterService {
   }
 
   /** Execute Ask query */
-  async ask(
-    prompt: string,
-    aiSettings: UserSettings['ai'],
-    options: AIRequestOptions = {}
-  ): Promise<AIResponse> {
-    const provider = await this.getProvider(aiSettings);
-    const mergedOptions: AIRequestOptions = {
-        explanationLevel: options.explanationLevel || aiSettings.explanationLevel,
-        responseStyle: options.responseStyle || aiSettings.responseStyle,
-        userApiKey: aiSettings.activeProvider === 'groq' ? aiSettings.groqApiKey : aiSettings.geminiApiKey,
-        groqApiKey: aiSettings.groqApiKey,
-        ollamaHost: aiSettings.ollamaHost,
-        model: options.model || aiSettings.activeModel, // Need to add activeModel to types
-        ...options
-    };
-    return await provider.ask(prompt, mergedOptions);
+  async ask(prompt: string, aiSettings: UserSettings['ai'], options: AIRequestOptions = {}): Promise<AIResponse> {
+    return this.executeWithFallback(aiSettings, options, (provider, mergedOptions) => provider.ask(prompt, mergedOptions));
   }
 
   /** Execute Streaming response */
-  async streamResponse(
-    prompt: string,
-    aiSettings: UserSettings['ai'],
-    options: AIRequestOptions = {},
-    onChunk?: (chunk: string) => void
-  ): Promise<AIResponse> {
-    const provider = await this.getProvider(aiSettings);
-    const mergedOptions: AIRequestOptions = {
-        explanationLevel: options.explanationLevel || aiSettings.explanationLevel,
-        responseStyle: options.responseStyle || aiSettings.responseStyle,
-        userApiKey: aiSettings.activeProvider === 'groq' ? aiSettings.groqApiKey : aiSettings.geminiApiKey,
-        groqApiKey: aiSettings.groqApiKey,
-        ollamaHost: aiSettings.ollamaHost,
-        model: options.model || aiSettings.activeModel,
-        ...options
-    };
-    return await provider.streamResponse(prompt, mergedOptions, onChunk);
+  async streamResponse(prompt: string, aiSettings: UserSettings['ai'], options: AIRequestOptions = {}, onChunk?: (chunk: string) => void): Promise<AIResponse> {
+    const proxy = { hasYielded: false };
+    const onChunkWrapper = onChunk ? (chunk: string) => { proxy.hasYielded = true; onChunk(chunk); } : undefined;
+    return this.executeWithFallback(aiSettings, options, (provider, mergedOptions) => provider.streamResponse(prompt, mergedOptions, onChunkWrapper), proxy);
   }
 
   /** Summarize */
-  async summarize(
-    text: string,
-    aiSettings: UserSettings['ai'],
-    options: AIRequestOptions = {}
-  ): Promise<AIResponse> {
-    const provider = await this.getProvider(aiSettings);
-    const mergedOptions: AIRequestOptions = {
-        userApiKey: aiSettings.activeProvider === 'groq' ? aiSettings.groqApiKey : aiSettings.geminiApiKey,
-        model: options.model || aiSettings.activeModel,
-        ...options
-    };
-    return await provider.summarize(text, mergedOptions);
+  async summarize(text: string, aiSettings: UserSettings['ai'], options: AIRequestOptions = {}): Promise<AIResponse> {
+    return this.executeWithFallback(aiSettings, options, (provider, mergedOptions) => provider.summarize(text, mergedOptions));
   }
 
   /** Explain Concept */
-  async explain(
-    concept: string,
-    aiSettings: UserSettings['ai'],
-    options: AIRequestOptions = {}
-  ): Promise<AIResponse> {
-    const provider = await this.getProvider(aiSettings);
-    const mergedOptions: AIRequestOptions = {
-        userApiKey: aiSettings.activeProvider === 'groq' ? aiSettings.groqApiKey : aiSettings.geminiApiKey,
-        model: options.model || aiSettings.activeModel,
-        ...options
-    };
-    return await provider.explain(concept, mergedOptions);
+  async explain(concept: string, aiSettings: UserSettings['ai'], options: AIRequestOptions = {}): Promise<AIResponse> {
+    return this.executeWithFallback(aiSettings, options, (provider, mergedOptions) => provider.explain(concept, mergedOptions));
   }
 
   /** Generate Practice Questions */
-  async generateQuestions(
-    params: PracticeQuestionParams,
-    aiSettings: UserSettings['ai'],
-    options: AIRequestOptions = {}
-  ): Promise<PracticeQuestion[]> {
-    const provider = await this.getProvider(aiSettings);
-    const mergedOptions: AIRequestOptions = {
-        userApiKey: aiSettings.activeProvider === 'groq' ? aiSettings.groqApiKey : aiSettings.geminiApiKey,
-        model: options.model || aiSettings.activeModel,
-        ...options
-    };
-    return await provider.generateQuestions(params, mergedOptions);
+  async generateQuestions(params: PracticeQuestionParams, aiSettings: UserSettings['ai'], options: AIRequestOptions = {}): Promise<PracticeQuestion[]> {
+    return this.executeWithFallback(aiSettings, options, (provider, mergedOptions) => provider.generateQuestions(params, mergedOptions));
   }
 
   /** Evaluate Student Answer */
-  async evaluateAnswer(
-    question: string,
-    userAnswer: string,
-    referenceSolution: string | undefined,
-    aiSettings: UserSettings['ai'],
-    options: AIRequestOptions = {}
-  ): Promise<AnswerEvaluation> {
-    const provider = await this.getProvider(aiSettings);
-    const mergedOptions: AIRequestOptions = {
-        userApiKey: aiSettings.activeProvider === 'groq' ? aiSettings.groqApiKey : aiSettings.geminiApiKey,
-        model: options.model || aiSettings.activeModel,
-        ...options
-    };
-    return await provider.evaluateAnswer(question, userAnswer, referenceSolution, mergedOptions);
+  async evaluateAnswer(question: string, userAnswer: string, referenceSolution: string | undefined, aiSettings: UserSettings['ai'], options: AIRequestOptions = {}): Promise<AnswerEvaluation> {
+    return this.executeWithFallback(aiSettings, options, (provider, mergedOptions) => provider.evaluateAnswer(question, userAnswer, referenceSolution, mergedOptions));
   }
 
   /** Fetch status for all registered providers sequentially (Real Pings) */

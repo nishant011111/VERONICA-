@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { LoginScreen } from './components/auth/LoginScreen';
 import { Header } from './components/layout/Header';
+import { TimetableReminderManager } from './components/layout/TimetableReminderManager';
 import { Sidebar } from './components/layout/Sidebar';
 import { MobileNav } from './components/layout/MobileNav';
 import { OnboardingModal } from './components/layout/OnboardingModal';
@@ -181,6 +182,7 @@ const MainAppContent: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans antialiased transition-colors duration-200">
       {/* Top Header Bar */}
+      <TimetableReminderManager />
       <Header onOpenQuickAdd={() => setIsQuickCreateOpen(true)} />
 
       {/* Main Body Shell */}

@@ -5,6 +5,8 @@ export const GEMINI_FALLBACK_MODELS = [
   'gemini-3.7-flash',
 ];
 
+export const OPENAI_PRIMARY_MODEL = 'gpt-5.6-luna';
+export const OPENAI_FALLBACK_MODELS = ['gpt-4o', 'gpt-4o-mini', 'gpt-3.5-turbo'];
 export const GROQ_PRIMARY_MODEL = 'openai/gpt-oss-20b';
 export const GROQ_FALLBACK_MODELS = [
   'openai/gpt-oss-120b',
@@ -20,6 +22,13 @@ export const ANDROID_PRIMARY_MODEL = 'Gemini Nano (On-Device)';
 export const AI_HEALTH_TEST_PROMPT = 'Reply with OK.';
 
 export const AI_PROVIDERS_CONFIG = {
+  openai: {
+    id: 'openai',
+    name: 'OpenAI (ChatGPT)',
+    primaryModel: OPENAI_PRIMARY_MODEL,
+    fallbackModels: OPENAI_FALLBACK_MODELS,
+    enabled: true
+  },
   gemini: {
     id: 'gemini',
     name: 'Gemini Cloud AI',

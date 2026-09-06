@@ -71,6 +71,7 @@ export class GeminiProvider implements AIProvider {
     const payload = {
       model,
       contents: prompt,
+      messages: options.messages,
       systemInstruction,
       apiKey: options.userApiKey,
       groqApiKey: (options as any).groqApiKey

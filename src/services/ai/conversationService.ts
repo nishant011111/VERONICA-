@@ -1,4 +1,7 @@
 import { AIConversation, ChatMessage, AcademicMode, ExplanationLevel } from '../../types';
+import { getFirestore, doc, setDoc, getDocs, collection, deleteDoc } from 'firebase/firestore';
+import { getApps, getApp } from 'firebase/app';
+
 
 const STORAGE_PREFIX = 'veronica_conversations_';
 
@@ -22,10 +25,45 @@ export class ConversationService {
   }
 
   /** Save conversation list for a user */
-  private static saveConversations(userId: string, conversations: AIConversation[]): void {
+  
+  private static async syncToFirebase(userId: string, conversations: AIConversation[]) {
+    if (!userId || userId === 'local_user') return;
+    try {
+      const db = getFirestore(getApp());
+      const convRef = doc(db, 'users', userId, 'data', 'conversations');
+      // Strip undefined values which Firebase rejects
+      const sanitizedConversations = JSON.parse(JSON.stringify(conversations));
+      await setDoc(convRef, { conversations: sanitizedConversations }, { merge: true });
+    } catch (e) {
+      console.error('Failed to sync conversations to Firebase:', e);
+    }
+  }
+
+  static async loadFromFirebase(userId: string): Promise<AIConversation[]> {
+    if (!userId || userId === 'local_user') return [];
+    try {
+      const db = getFirestore(getApp());
+      const convRef = doc(db, 'users', userId, 'data', 'conversations');
+      const { getDoc } = await import('firebase/firestore');
+      const snapshot = await getDoc(convRef);
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        if (data.conversations) {
+          this.saveConversations(userId, data.conversations, true);
+          return data.conversations;
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load conversations from Firebase:', e);
+    }
+    return [];
+  }
+
+  private static saveConversations(userId: string, conversations: AIConversation[], skipFirebase = false): void {
     if (typeof window === 'undefined') return;
     try {
       localStorage.setItem(this.getStorageKey(userId), JSON.stringify(conversations));
+      if (!skipFirebase) this.syncToFirebase(userId, conversations);
     } catch (e) {
       console.error('Failed to save user conversations:', e);
     }
